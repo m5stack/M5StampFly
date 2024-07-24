@@ -1,8 +1,12 @@
 # StampFly
 
-## framework
+## Framework
 
-platfromio
+Platformio
+
+## Base on project
+
+[M5Fly-kanazawa/StampFly2024June (github.com)](https://github.com/M5Fly-kanazawa/StampFly2024June)
 
 ## Third-party libraries
 
