@@ -9,6 +9,7 @@ jobs:
         path:
           - check: './'    # path to include
             exclude: './lib'    # path to exclude
+            exclude: './include'    # path to exclude
           # - check: 'src'
           #   exclude: '(Fonts)' # Exclude file paths containing "Fonts"
           # - check: 'examples'
