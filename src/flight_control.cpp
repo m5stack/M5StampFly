@@ -35,6 +35,7 @@
 // 2024-06-29 送信機OFFで自動着陸
 // 2024-06-29 着陸時、Madgwick Filter Off
 // 2024-07-21 flip関数追加、高度センサの測定限界で自動降下（暫定版）
+// 2024-08-10 Acroモードで高度制御働かないバグを修正
 
 #include "flight_control.hpp"
 #include "rc.hpp"
@@ -73,12 +74,12 @@ float Control_period = 0.0025f;  // 400Hz
 
 // PID Gain
 // Rate control PID gain
-const float Roll_rate_kp  = 0.6f;
+const float Roll_rate_kp  = 0.65f;
 const float Roll_rate_ti  = 0.7f;
 const float Roll_rate_td  = 0.01;
 const float Roll_rate_eta = 0.125f;
 
-const float Pitch_rate_kp  = 0.75f;
+const float Pitch_rate_kp  = 0.95f;
 const float Pitch_rate_ti  = 0.7f;
 const float Pitch_rate_td  = 0.025f;
 const float Pitch_rate_eta = 0.125f;
@@ -229,6 +230,7 @@ void reset_angle_control(void);
 uint8_t auto_landing(void);
 float get_trim_duty(float voltage);
 void flip(void);
+float get_rate_ref(float x);
 
 // 割り込み関数
 // Intrupt function
@@ -337,8 +339,8 @@ void loop_400Hz(void) {
         if (judge_mode_change() == 1) Mode = AUTO_LANDING_MODE;
         if (rc_isconnected() == 0) Mode = AUTO_LANDING_MODE;
         // if (Range0flag == 20) Mode = AUTO_LANDING_MODE;
-
         if (OverG_flag == 1) Mode = PARKING_MODE;
+        if(Mode != OldMode)ahrs_reset(); 
 
         // Get command
         get_command();
@@ -592,6 +594,122 @@ void control_init(void) {
 }
 ///////////////////////////////////////////////////////////////////
 
+float get_trim_duty(float voltage)
+{
+  return -0.2448f * voltage + 1.5892f;
+}
+
+float get_rate_ref(float x)
+{
+  float ref;
+  float h;
+  if (x < -1.0f) x = -1.0f;
+  if (x >  1.0f) x =  1.0f;
+  if (x >= 0.0f)
+  {
+    h = x * (x * x * x * x * x * RATE_EXPO + x * (1 - RATE_EXPO));
+    ref  = PI/180.0f * ((RATE_MAX - RATE_RATE)* h + RATE_RATE * x);
+  }
+  else
+  {
+    x = -x;
+    h = x * (x * x * x * x * x * RATE_EXPO + x * (1 - RATE_EXPO));
+    ref  = - PI/180.0f * ((RATE_MAX - RATE_RATE)* h + RATE_RATE * x);
+  }
+  return ref;
+}
+
+void get_command(void)
+{
+  static uint16_t stick_count=0;
+  static float auto_throttle = 0.0f;
+  static float old_alt = 0.0;
+  float th,thlo;
+  float throttle_limit = 0.7;
+  float thrust_max;
+
+  Control_mode = Stick[CONTROLMODE];
+  if ( (uint8_t)Stick[ALTCONTROLMODE] == AUTO_ALT ) Throttle_control_mode = 1;
+  else if( (uint8_t)Stick[ALTCONTROLMODE] == MANUAL_ALT) Throttle_control_mode = 0;
+  else Throttle_control_mode = 0;
+
+  //Thrust control
+  thlo = Stick[THROTTLE];
+  //thlo = thlo/throttle_limit;
+
+  if (Throttle_control_mode == 0)
+  {
+    //Manual Throttle
+    if(thlo<0.0)thlo = 0.0;
+    if (thlo>1.0f) thlo = 1.0f;
+    if ( (-0.2 < thlo) && (thlo < 0.2) )thlo = 0.0f ;//不感帯   
+    th = (get_trim_duty(Voltage)+(thlo-0.4))*BATTERY_VOLTAGE;
+    if(th<0)th=0.0f;
+    Thrust_command = Thrust_filtered.update(th, Interval_time);
+  }
+  else if (Throttle_control_mode == 1)
+  {
+    //Auto Throttle Altitude Control
+    Alt_flag = 1;
+    if(Auto_takeoff_counter < 500)
+    {
+      Thrust0 = (float)Auto_takeoff_counter/1000.0;
+      if (Thrust0 > get_trim_duty(3.8)) Thrust0 = get_trim_duty(3.8);
+      Auto_takeoff_counter ++;
+    }
+    else if(Auto_takeoff_counter < 1000)
+    {
+      Thrust0 = (float)Auto_takeoff_counter/1000.0;
+      if (Thrust0 > get_trim_duty(Voltage)) Thrust0 = get_trim_duty(Voltage);
+      Auto_takeoff_counter ++;
+    }
+    else Thrust0 = get_trim_duty(Voltage);
+    
+    //Get Altitude ref
+    if ( (-0.2 < thlo) && (thlo < 0.2) )thlo = 0.0f ;//不感帯
+    Alt_ref = Alt_ref + thlo*0.001;
+    if(Alt_ref > ALT_REF_MAX ) Alt_ref = ALT_REF_MAX;
+    if(Alt_ref < ALT_REF_MIN ) Alt_ref = ALT_REF_MIN;
+    if( (Range0flag > OladRange0flag) || (Range0flag == RNAGE0FLAG_MAX))
+    {
+      Thrust0 = Thrust0 - 0.02;
+      OladRange0flag =Range0flag;
+    }
+    Thrust_command = Thrust0 * BATTERY_VOLTAGE;    
+  } 
+
+  if (Control_mode == ANGLECONTROL)
+  {
+    Roll_angle_command = 0.4*Stick[AILERON];
+    if (Roll_angle_command<-1.0f)Roll_angle_command = -1.0f;
+    if (Roll_angle_command> 1.0f)Roll_angle_command =  1.0f;  
+    Pitch_angle_command = 0.4*Stick[ELEVATOR];
+    if (Pitch_angle_command<-1.0f)Pitch_angle_command = -1.0f;
+    if (Pitch_angle_command> 1.0f)Pitch_angle_command =  1.0f;  
+  }
+  else if (Control_mode == RATECONTROL)
+  {
+    Roll_rate_reference = get_rate_ref(Stick[AILERON]);
+    Pitch_rate_reference = get_rate_ref(Stick[ELEVATOR]);
+    //USBSerial.printf("%9.6f\n\r", Pitch_rate_reference*180.0f/PI);
+  }
+
+  Yaw_angle_command = Stick[RUDDER];
+  if (Yaw_angle_command<-1.0f)Yaw_angle_command = -1.0f;
+  if (Yaw_angle_command> 1.0f)Yaw_angle_command =  1.0f;  
+  //Yaw control
+  Yaw_rate_reference   = 2.0f * PI * (Yaw_angle_command - Rudder_center);
+
+
+  // flip button check
+  if (Flip_flag == 0 /*&& Throttle_control_mode == 0*/)
+  {
+    Flip_flag = get_flip_button();
+    if(Flip_flag == 1)Mode = FLIP_MODE;
+  }
+}
+
+#if 0
 float get_trim_duty(float voltage) {
     return -0.2448f * voltage + 1.5892f;
 }
@@ -674,6 +792,7 @@ void get_command(void) {
         if (Flip_flag == 1) Mode = FLIP_MODE;
     }
 }
+#endif
 
 uint8_t auto_landing(void) {
     // Auto Landing
@@ -724,8 +843,8 @@ uint8_t auto_landing(void) {
     Yaw_rate_reference = 2.0f * PI * (Yaw_angle_command - Rudder_center);
 
     if (Control_mode == RATECONTROL) {
-        Roll_rate_reference  = 240 * PI / 180 * Roll_angle_command;
-        Pitch_rate_reference = 240 * PI / 180 * Pitch_angle_command;
+        Roll_rate_reference = get_rate_ref(Stick[AILERON]);
+        Pitch_rate_reference = get_rate_ref(Stick[ELEVATOR]);
     }
 
     // USBSerial.printf("thro=%9.6f Alt=%9.6f state=%d flag=%d\r\n",auto_throttle, Altitude2, Landing_state, flag);
@@ -885,32 +1004,34 @@ void angle_control(void) {
     uint16_t flip_step;
     float domega;
 
-    if (Control_mode == RATECONTROL) return;
-
     // PID Control
     if (Thrust_command / BATTERY_VOLTAGE < Motor_on_duty_threshold) {
         // Initialize
         reset_angle_control();
     } else {
-        // Angle Control
-        // Led_color = RED;
-        // Get Roll and Pitch angle ref
-        Roll_angle_reference  = 0.5f * PI * (Roll_angle_command - Aileron_center);
-        Pitch_angle_reference = 0.5f * PI * (Pitch_angle_command - Elevator_center);
-        if (Roll_angle_reference > (30.0f * PI / 180.0f)) Roll_angle_reference = 30.0f * PI / 180.0f;
-        if (Roll_angle_reference < -(30.0f * PI / 180.0f)) Roll_angle_reference = -30.0f * PI / 180.0f;
-        if (Pitch_angle_reference > (30.0f * PI / 180.0f)) Pitch_angle_reference = 30.0f * PI / 180.0f;
-        if (Pitch_angle_reference < -(30.0f * PI / 180.0f)) Pitch_angle_reference = -30.0f * PI / 180.0f;
-
-        // Error
-        phi_err   = Roll_angle_reference - (Roll_angle - Roll_angle_offset);
-        theta_err = Pitch_angle_reference - (Pitch_angle - Pitch_angle_offset);
-        alt_err   = Alt_ref - Altitude2;
-
         // Altitude Control PID
-        Roll_rate_reference  = phi_pid.update(phi_err, Interval_time);
-        Pitch_rate_reference = theta_pid.update(theta_err, Interval_time);
+        alt_err   = Alt_ref - Altitude2;
         if (Alt_flag >= 1) Z_dot_ref = alt_pid.update(alt_err, Interval_time);
+    
+        if (Control_mode == ANGLECONTROL) {
+            // Angle Control
+            // Led_color = RED;
+            // Get Roll and Pitch angle ref
+            Roll_angle_reference  = 0.5f * PI * (Roll_angle_command - Aileron_center);
+            Pitch_angle_reference = 0.5f * PI * (Pitch_angle_command - Elevator_center);
+            if (Roll_angle_reference > (30.0f * PI / 180.0f)) Roll_angle_reference = 30.0f * PI / 180.0f;
+            if (Roll_angle_reference < -(30.0f * PI / 180.0f)) Roll_angle_reference = -30.0f * PI / 180.0f;
+            if (Pitch_angle_reference > (30.0f * PI / 180.0f)) Pitch_angle_reference = 30.0f * PI / 180.0f;
+            if (Pitch_angle_reference < -(30.0f * PI / 180.0f)) Pitch_angle_reference = -30.0f * PI / 180.0f;
+
+            // Error
+            phi_err   = Roll_angle_reference - (Roll_angle - Roll_angle_offset);
+            theta_err = Pitch_angle_reference - (Pitch_angle - Pitch_angle_offset);
+
+            //Angle Control PID
+            Roll_rate_reference  = phi_pid.update(phi_err, Interval_time);
+            Pitch_rate_reference = theta_pid.update(theta_err, Interval_time);
+        }
     }
 }
 

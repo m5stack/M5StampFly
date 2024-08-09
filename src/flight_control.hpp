@@ -59,6 +59,10 @@
 
 #define RNAGE0FLAG_MAX (20)
 
+#define RATE_RATE (70.0f)
+#define RATE_MAX (1600.0f)
+#define RATE_EXPO (0.5f)
+
 // グローバル関数の宣言
 void init_copter(void);
 void loop_400Hz(void);

@@ -118,10 +118,10 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *recv_data, int data_len)
     d_int[3]        = recv_data[18];
     Stick[ELEVATOR] = d_float;
 
-    Stick[BUTTON_ARM]     = recv_data[19];
+    Stick[BUTTON_ARM]     = recv_data[19];//auto_up_down_status
     Stick[BUTTON_FLIP]    = recv_data[20];
-    Stick[CONTROLMODE]    = recv_data[21];
-    Stick[ALTCONTROLMODE] = recv_data[22];
+    Stick[CONTROLMODE]    = recv_data[21];//Mode:rate or angle control
+    Stick[ALTCONTROLMODE] = recv_data[22];//高度制御
 
     ahrs_reset_flag = recv_data[23];
 
@@ -182,7 +182,7 @@ void rc_init(void) {
     for (uint16_t i = 0; i < 50; i++) {
         send_peer_info();
         delay(50);
-        // USBSerial.printf("%d\n", i);
+        USBSerial.printf("%d\n", i);
     }
 
     // ESP-NOW再初期化
