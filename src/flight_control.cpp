@@ -213,7 +213,7 @@ uint8_t ahrs_reset_flag      = 0;
 uint8_t last_ahrs_reset_flag = 0;
 
 // Function declaration
-void init_pwm();
+void pwm_init();
 void control_init();
 void variable_init(void);
 void get_command(void);
@@ -259,7 +259,7 @@ void init_copter(void) {
     USBSerial.printf("Start StampFly!\r\n");
 
     // Initialize PWM
-    init_pwm();
+    pwm_init();
     sensor_init();
     USBSerial.printf("Finish sensor init!\r\n");
 
@@ -1033,7 +1033,7 @@ void set_duty_rl(float duty) {
     ledcWrite(RearLeft_motor, (uint32_t)(255 * duty));
 }
 
-void init_pwm(void) {
+void pwm_init(void) {
     ledcSetup(FrontLeft_motor, freq, resolution);
     ledcSetup(FrontRight_motor, freq, resolution);
     ledcSetup(RearLeft_motor, freq, resolution);
