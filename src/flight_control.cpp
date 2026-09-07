@@ -639,8 +639,7 @@ void get_command(void) {
         if (thlo < 0.0) thlo = 0.0;
         if (thlo > 1.0f) thlo = 1.0f;
         if ((-0.2 < thlo) && (thlo < 0.2)) thlo = 0.0f;  // 不感帯
-        th = (get_trim_duty(Voltage) + (thlo - 0.4)) * BATTERY_VOLTAGE;
-        if (th < 0) th = 0.0f;
+        th = (4.13e-3 + 3.3f * thlo - 5.44f * thlo * thlo + 3.13f * thlo * thlo * thlo) * BATTERY_VOLTAGE;
         Thrust_command = Thrust_filtered.update(th, Interval_time);
     } else if (Throttle_control_mode == 1) {
         // Auto Throttle Altitude Control
