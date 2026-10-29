@@ -5,14 +5,18 @@
 #include <esp_err.h>
 #include <esp32-hal-i2c.h>
 
-#define STAMPFLY_I2C_TIMEOUT_MS 50U
+static uint32_t stampfly_i2c_timeout_ms = STAMPFLY_I2C_INIT_TIMEOUT_MS;
+
+void stampfly_i2c_set_timeout_ms(uint32_t timeout_ms) {
+    stampfly_i2c_timeout_ms = timeout_ms;
+}
 
 int stampfly_i2c_write(uint8_t i2c_num, uint16_t address, const uint8_t *data, size_t length) {
     if ((data == NULL) && (length != 0U)) {
         return -1;
     }
 
-    return i2cWrite(i2c_num, address, data, length, STAMPFLY_I2C_TIMEOUT_MS) == ESP_OK ? 0 : -1;
+    return i2cWrite(i2c_num, address, data, length, stampfly_i2c_timeout_ms) == ESP_OK ? 0 : -1;
 }
 
 int stampfly_i2c_read(uint8_t i2c_num, uint16_t address, uint8_t *data, size_t length) {
@@ -22,7 +26,7 @@ int stampfly_i2c_read(uint8_t i2c_num, uint16_t address, uint8_t *data, size_t l
         return -1;
     }
 
-    if (i2cRead(i2c_num, address, data, length, STAMPFLY_I2C_TIMEOUT_MS, &read_count) != ESP_OK) {
+    if (i2cRead(i2c_num, address, data, length, stampfly_i2c_timeout_ms, &read_count) != ESP_OK) {
         return -1;
     }
 
@@ -37,7 +41,7 @@ int stampfly_i2c_write_read(uint8_t i2c_num, uint16_t address, const uint8_t *wr
         return -1;
     }
 
-    if (i2cWriteReadNonStop(i2c_num, address, write_data, write_length, read_data, read_length, STAMPFLY_I2C_TIMEOUT_MS,
+    if (i2cWriteReadNonStop(i2c_num, address, write_data, write_length, read_data, read_length, stampfly_i2c_timeout_ms,
                             &read_count) != ESP_OK) {
         return -1;
     }

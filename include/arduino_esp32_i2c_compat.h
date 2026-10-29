@@ -11,6 +11,10 @@ extern "C" {
 
 #if STAMPFLY_ARDUINO_ESP32_V3
 
+#define STAMPFLY_I2C_INIT_TIMEOUT_MS    50U
+#define STAMPFLY_I2C_RUNTIME_TIMEOUT_MS 5U
+
+void stampfly_i2c_set_timeout_ms(uint32_t timeout_ms);
 int stampfly_i2c_write(uint8_t i2c_num, uint16_t address, const uint8_t *data, size_t length);
 int stampfly_i2c_read(uint8_t i2c_num, uint16_t address, uint8_t *data, size_t length);
 int stampfly_i2c_write_read(uint8_t i2c_num,
