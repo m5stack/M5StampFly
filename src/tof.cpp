@@ -25,7 +25,6 @@
 
 #include <Arduino.h>
 #include "arduino_esp32_compat.h"
-#include "sensor.hpp"
 #include "tof.hpp"
 
 VL53LX_Dev_t tof_front;
@@ -76,10 +75,6 @@ void tof_init(void) {
     delay(100);
     VL53LX_SetDeviceAddress(ToF_front, 0x54);
     ToF_front->i2c_slave_address = 0x2A;
-
-    // Verify the front ToF address before enabling the bottom ToF.
-    USBSerial.println("I2C scan after front ToF address change");
-    scan_i2c();
 
     delay(100);
     digitalWrite(XSHUT_BOTTOM, HIGH);
