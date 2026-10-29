@@ -54,7 +54,7 @@ esp_now_peer_info_t peerInfo;
 volatile float Stick[16];
 volatile uint8_t Recv_MAC[3];
 
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 0)
 void on_esp_now_sent(const esp_now_send_info_t *tx_info, esp_now_send_status_t status);
 #else
 void on_esp_now_sent(const uint8_t *mac_addr, esp_now_send_status_t status);
@@ -163,7 +163,7 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *recv_data, int data_len)
 
 // 送信コールバック
 uint8_t esp_now_send_status;
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 0)
 void on_esp_now_sent(const esp_now_send_info_t *tx_info, esp_now_send_status_t status) {
     (void)tx_info;
     esp_now_send_status = status;
