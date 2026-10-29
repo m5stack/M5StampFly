@@ -1,17 +1,16 @@
 name: Arduino Lint Check
 on:
   push:
-    branches: [main, master]
+    branches: [ master ]
   pull_request:
-    branches: [main, master]
-  workflow_dispatch:
+    branches: [ master ]
 jobs:
   lint:
     name: Lint Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: arduino/arduino-lint-action@v2
+      - uses: actions/checkout@v2
+      - uses: arduino/arduino-lint-action@v1
         with:
           library-manager: update
           compliance: strict
