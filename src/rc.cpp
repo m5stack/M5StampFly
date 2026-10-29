@@ -60,7 +60,7 @@ void on_esp_now_sent(const esp_now_send_info_t *tx_info, esp_now_send_status_t s
 void on_esp_now_sent(const uint8_t *mac_addr, esp_now_send_status_t status);
 #endif
 
-// 受信数据公共处理逻辑
+// Common handler for received data
 static void handle_received_data(const uint8_t *src_mac, const uint8_t *recv_data, int data_len) {
     Connect_flag = 0;
 
@@ -150,7 +150,7 @@ static void handle_received_data(const uint8_t *src_mac, const uint8_t *recv_dat
 #endif
 }
 
-// 受信回调外壳
+// Receive callback wrapper (Arduino-ESP32 2.x / 3.x signatures)
 #if STAMPFLY_ARDUINO_ESP32_V3
 void OnDataRecv(const esp_now_recv_info_t *info, const uint8_t *recv_data, int data_len) {
     handle_received_data(info->src_addr, recv_data, data_len);
