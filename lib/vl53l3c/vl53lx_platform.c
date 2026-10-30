@@ -38,6 +38,7 @@ unsigned int i2cwriteCount = 0;
 unsigned char SPI2C_Buffer[256];
 
 #include <vl53lx_platform.h>
+#include "../../include/arduino_esp32_i2c_compat.h"
 #ifndef SMALL_FOOTPRINT
 #include <vl53lx_platform_ipp.h>
 #endif
@@ -49,7 +50,9 @@ unsigned char SPI2C_Buffer[256];
 #include <math.h>
 
 //#include "esp_log.h"
+#if !STAMPFLY_ARDUINO_ESP32_V3
 #include "driver/i2c.h"
+#endif
 
 #define I2C_TIME_OUT_BASE   10
 #define I2C_TIME_OUT_BYTE   1
@@ -60,7 +63,20 @@ unsigned char SPI2C_Buffer[256];
 #endif
 
 
-i2c_cmd_handle_t i2chandle;
+#if STAMPFLY_ARDUINO_ESP32_V3
+typedef struct {
+    uint8_t address;
+    const uint8_t *write_data;
+    uint32_t write_count;
+    uint8_t *read_data;
+    uint32_t read_count;
+    int transfer_status;
+} stampfly_i2c_transaction_t;
+
+static stampfly_i2c_transaction_t i2c_transaction;
+#else
+static i2c_cmd_handle_t i2chandle;
+#endif
 
 //#ifndef HAL_I2C_MODULE_ENABLED
 //#warning "HAL I2C module must be enable "
@@ -70,7 +86,7 @@ i2c_cmd_handle_t i2chandle;
 
 
 
-uint8_t _I2CBuffer[256];
+static uint8_t _I2CBuffer[256];
 
 
 #define I2C_MASTER_SDA_IO 3
@@ -82,6 +98,7 @@ uint8_t _I2CBuffer[256];
 #define I2C_MASTER_TIMEOUT_MS       1000
 //#define I2C_SENSOR_ADDR 0x29
 
+#if !STAMPFLY_ARDUINO_ESP32_V3
 int i2c_master_port = I2C_MASTER_NUM;
 i2c_config_t conf = {
     .mode = I2C_MODE_MASTER,
@@ -92,6 +109,7 @@ i2c_config_t conf = {
     .master.clk_speed = I2C_MASTER_FREQ_HZ,  // select frequency specific to your project
     .clk_flags = 0,                          // optional; you can use I2C_SCLK_SRC_FLAG_* flags to choose i2c source clock here
 };
+#endif
 
 /* when not customized by application define dummy one */
 //#ifndef VL53LX_GetI2cBus
@@ -101,7 +119,16 @@ i2c_config_t conf = {
 //#endif
 void VL53LX_GetI2cBus(void)
 {
+#if STAMPFLY_ARDUINO_ESP32_V3
+    i2c_transaction.address = 0;
+    i2c_transaction.write_data = NULL;
+    i2c_transaction.write_count = 0;
+    i2c_transaction.read_data = NULL;
+    i2c_transaction.read_count = 0;
+    i2c_transaction.transfer_status = 0;
+#else
     i2chandle = i2c_cmd_link_create();
+#endif
 }
 
 //#ifndef VL53LX_PutI2cBus
@@ -112,16 +139,48 @@ void VL53LX_GetI2cBus(void)
 
 void VL53LX_PutI2cBus(void)
 {
+#if STAMPFLY_ARDUINO_ESP32_V3
+    if ((i2c_transaction.write_count != 0U) && (i2c_transaction.read_count != 0U)) {
+        i2c_transaction.transfer_status = stampfly_i2c_write_read(I2C_MASTER_NUM,
+                                                                  i2c_transaction.address,
+                                                                  i2c_transaction.write_data,
+                                                                  i2c_transaction.write_count,
+                                                                  i2c_transaction.read_data,
+                                                                  i2c_transaction.read_count);
+    } else if (i2c_transaction.write_count != 0U) {
+        i2c_transaction.transfer_status = stampfly_i2c_write(I2C_MASTER_NUM,
+                                                             i2c_transaction.address,
+                                                             i2c_transaction.write_data,
+                                                             i2c_transaction.write_count);
+    } else if (i2c_transaction.read_count != 0U) {
+        i2c_transaction.transfer_status = stampfly_i2c_read(I2C_MASTER_NUM,
+                                                            i2c_transaction.address,
+                                                            i2c_transaction.read_data,
+                                                            i2c_transaction.read_count);
+    }
+#else
     i2c_master_stop(i2chandle);
     i2c_master_cmd_begin(i2c_master_port,i2chandle, 1 / portTICK_RATE_MS);
     i2c_cmd_link_delete(i2chandle);
+#endif
 }
+
+#if STAMPFLY_ARDUINO_ESP32_V3
+static VL53LX_Error stampfly_i2c_propagate_status(VL53LX_Error status)
+{
+    if ((status == VL53LX_ERROR_NONE) && (i2c_transaction.transfer_status != 0)) {
+        return VL53LX_ERROR_CONTROL_INTERFACE;
+    }
+
+    return status;
+}
+#endif
 
 int vl53lx_i2c_init(void)
 {
     int status=0;
     //i2c_driver_delete(i2c_master_port);
-    ets_delay_us(100000);
+    stampfly_delay_us(100000);
     //delay(100);
     //status = i2c_param_config(i2c_master_port, &conf);
     //status = status|i2c_driver_install(i2c_master_port, conf.mode, 0, 0, 0);
@@ -129,15 +188,36 @@ int vl53lx_i2c_init(void)
 }
 
 int _I2CWrite(VL53LX_DEV Dev, uint8_t *pdata, uint32_t count) {
+#if STAMPFLY_ARDUINO_ESP32_V3
+    if ((Dev == NULL) || ((pdata == NULL) && (count != 0U))) {
+        return -1;
+    }
+
+    i2c_transaction.address = Dev->i2c_slave_address;
+    i2c_transaction.write_data = pdata;
+    i2c_transaction.write_count = count;
+    return 0;
+#else
     int status;
     
     i2c_master_start(i2chandle);
     status = i2c_master_write_byte(i2chandle, (Dev->i2c_slave_address<<1)|I2C_MASTER_WRITE, I2C_MASTER_ACK);
     status = i2c_master_write(i2chandle, pdata, count, I2C_MASTER_ACK);
     return status;
+#endif
 }
 
 int _I2CRead(VL53LX_DEV Dev, uint8_t *pdata, uint32_t count) {
+#if STAMPFLY_ARDUINO_ESP32_V3
+    if ((Dev == NULL) || ((pdata == NULL) && (count != 0U))) {
+        return -1;
+    }
+
+    i2c_transaction.address = Dev->i2c_slave_address;
+    i2c_transaction.read_data = pdata;
+    i2c_transaction.read_count = count;
+    return 0;
+#else
     int status;
 
     i2c_master_start(i2chandle);
@@ -148,6 +228,7 @@ int _I2CRead(VL53LX_DEV Dev, uint8_t *pdata, uint32_t count) {
     }
     status = i2c_master_read_byte(i2chandle, pdata+count-1, I2C_MASTER_NACK);
     return status;
+#endif
 }
 
 VL53LX_Error VL53LX_WriteMulti(VL53LX_DEV Dev, uint16_t index, uint8_t *pdata, uint32_t count) {
@@ -165,6 +246,9 @@ VL53LX_Error VL53LX_WriteMulti(VL53LX_DEV Dev, uint16_t index, uint8_t *pdata, u
         Status = VL53LX_ERROR_CONTROL_INTERFACE;
     }
     VL53LX_PutI2cBus();
+#if STAMPFLY_ARDUINO_ESP32_V3
+    Status = stampfly_i2c_propagate_status(Status);
+#endif
     return Status;
 }
 
@@ -187,6 +271,9 @@ VL53LX_Error VL53LX_ReadMulti(VL53LX_DEV Dev, uint16_t index, uint8_t *pdata, ui
     }
 done:
     VL53LX_PutI2cBus();
+#if STAMPFLY_ARDUINO_ESP32_V3
+    Status = stampfly_i2c_propagate_status(Status);
+#endif
     return Status;
 }
 
@@ -204,6 +291,9 @@ VL53LX_Error VL53LX_WrByte(VL53LX_DEV Dev, uint16_t index, uint8_t data) {
         Status = VL53LX_ERROR_CONTROL_INTERFACE;
     }
     VL53LX_PutI2cBus();
+#if STAMPFLY_ARDUINO_ESP32_V3
+    Status = stampfly_i2c_propagate_status(Status);
+#endif
     return Status;
 }
 
@@ -222,6 +312,9 @@ VL53LX_Error VL53LX_WrWord(VL53LX_DEV Dev, uint16_t index, uint16_t data) {
         Status = VL53LX_ERROR_CONTROL_INTERFACE;
     }
     VL53LX_PutI2cBus();
+#if STAMPFLY_ARDUINO_ESP32_V3
+    Status = stampfly_i2c_propagate_status(Status);
+#endif
     return Status;
 }
 
@@ -240,6 +333,9 @@ VL53LX_Error VL53LX_WrDWord(VL53LX_DEV Dev, uint16_t index, uint32_t data) {
         Status = VL53LX_ERROR_CONTROL_INTERFACE;
     }
     VL53LX_PutI2cBus();
+#if STAMPFLY_ARDUINO_ESP32_V3
+    Status = stampfly_i2c_propagate_status(Status);
+#endif
     return Status;
 }
 
@@ -276,6 +372,9 @@ VL53LX_Error VL53LX_RdByte(VL53LX_DEV Dev, uint16_t index, uint8_t *data) {
 
 done:
     VL53LX_PutI2cBus();
+#if STAMPFLY_ARDUINO_ESP32_V3
+    Status = stampfly_i2c_propagate_status(Status);
+#endif
     return Status;
 }
 
@@ -300,7 +399,14 @@ VL53LX_Error VL53LX_RdWord(VL53LX_DEV Dev, uint16_t index, uint16_t *data) {
 
 done:
     VL53LX_PutI2cBus();
+#if STAMPFLY_ARDUINO_ESP32_V3
+    Status = stampfly_i2c_propagate_status(Status);
+    if (Status == VL53LX_ERROR_NONE) {
+        *data = ((uint16_t)_I2CBuffer[0]<<8)+ (uint16_t)_I2CBuffer[1];
+    }
+#else
     *data = ((uint16_t)_I2CBuffer[0]<<8)+ (uint16_t)_I2CBuffer[1];
+#endif
     return Status;
 }
 
@@ -324,7 +430,14 @@ VL53LX_Error VL53LX_RdDWord(VL53LX_DEV Dev, uint16_t index, uint32_t *data) {
 
 done:
     VL53LX_PutI2cBus();
+#if STAMPFLY_ARDUINO_ESP32_V3
+    Status = stampfly_i2c_propagate_status(Status);
+    if (Status == VL53LX_ERROR_NONE) {
+        *data = ((uint32_t)_I2CBuffer[0]<<24) + ((uint32_t)_I2CBuffer[1]<<16) + ((uint32_t)_I2CBuffer[2]<<8) + (uint32_t)_I2CBuffer[3];
+    }
+#else
     *data = ((uint32_t)_I2CBuffer[0]<<24) + ((uint32_t)_I2CBuffer[1]<<16) + ((uint32_t)_I2CBuffer[2]<<8) + (uint32_t)_I2CBuffer[3];
+#endif
     return Status;
 }
 
@@ -392,14 +505,14 @@ VL53LX_Error VL53LX_GetTimerFrequency(int32_t *ptimer_freq_hz)
 
 VL53LX_Error VL53LX_WaitMs(VL53LX_Dev_t *pdev, int32_t wait_ms){
 	(void)pdev;
-    ets_delay_us(wait_ms*1000);
+    stampfly_delay_us(wait_ms*1000);
 	//delay(wait_ms);
     return VL53LX_ERROR_NONE;
 }
 
 VL53LX_Error VL53LX_WaitUs(VL53LX_Dev_t *pdev, int32_t wait_us){
 	(void)pdev;
-    ets_delay_us(wait_us);   
+    stampfly_delay_us(wait_us);
 	//delay(wait_us/1000);
     return VL53LX_ERROR_NONE;
 }
@@ -504,7 +617,6 @@ VL53LX_Error VL53LX_WaitValueMaskEx(
 
 	return status;
 }
-
 
 
 

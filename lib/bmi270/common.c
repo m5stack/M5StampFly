@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "common.h"
+#include "../../include/arduino_esp32_i2c_compat.h"
 //#include "bmi2_defs.h"
 
 //#include "driver/i2c.h"
@@ -39,18 +40,22 @@ static struct coines_intf_config intf_conf;
 struct bmi2_dev Bmi270;
 struct bmi2_dev *pBmi270=&Bmi270;
 
-i2c_cmd_handle_t i2chandle;
+#if !STAMPFLY_ARDUINO_ESP32_V3
+static i2c_cmd_handle_t i2chandle;
+#endif
 
 // SPIデバイスハンドラーを使って通信する
 spi_device_handle_t spidev;
 
 
 
+#if !STAMPFLY_ARDUINO_ESP32_V3
 i2c_port_t i2c_port=1;
+#endif
 
 uint8_t Bmi270_address = 0x69; 
 
-uint8_t _I2CBuffer[256];
+static uint8_t _I2CBuffer[256];
 
 struct bmi2_sens_config config;
 
@@ -65,6 +70,7 @@ void bmi270_dev_init(void)
   Bmi270.gyro_en = 1;
 }
 
+#if !STAMPFLY_ARDUINO_ESP32_V3
 void getI2cBus(void)
 {
     i2chandle = i2c_cmd_link_create();
@@ -98,6 +104,7 @@ int _i2cRead(uint8_t slave_address, uint8_t *pdata, uint32_t count) {
     status = i2c_master_read_byte(i2chandle, pdata+count-1, I2C_MASTER_NACK);
     return status;
 }
+#endif
 
 /******************************************************************************/
 /*!                User interface functions                                   */
@@ -111,6 +118,13 @@ BMI2_INTF_RETURN_TYPE bmi2_i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32_
     int32_t status_int;
 
     _I2CBuffer[0] = reg_addr;
+#if STAMPFLY_ARDUINO_ESP32_V3
+    status_int = stampfly_i2c_write_read(1, Bmi270_address, _I2CBuffer, 1, reg_data, len);
+    if (status_int != 0) {
+        Status = 0x66;
+    }
+    return Status;
+#else
     getI2cBus();
     status_int = _i2cWrite(Bmi270_address, _I2CBuffer, 1);
     if (status_int != 0) {
@@ -124,6 +138,7 @@ BMI2_INTF_RETURN_TYPE bmi2_i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32_
 done:
     putI2cBus();
     return Status;
+#endif
 }
 
 /*!
@@ -138,6 +153,13 @@ BMI2_INTF_RETURN_TYPE bmi2_i2c_write(uint8_t reg_addr, const uint8_t *reg_data, 
     }
     _I2CBuffer[0] = reg_addr;
     memcpy(&_I2CBuffer[1], reg_data, len);
+#if STAMPFLY_ARDUINO_ESP32_V3
+    status_int = stampfly_i2c_write(1, Bmi270_address, _I2CBuffer, len + 1);
+    if (status_int != 0) {
+        Status = 0x55;
+    }
+    return Status;
+#else
     getI2cBus();
     status_int = _i2cWrite(Bmi270_address, _I2CBuffer, len + 1);
     if (status_int != 0) {
@@ -145,6 +167,7 @@ BMI2_INTF_RETURN_TYPE bmi2_i2c_write(uint8_t reg_addr, const uint8_t *reg_data, 
     }
     putI2cBus();
     return Status;
+#endif
 }
 
 //SPIバスの設定
@@ -256,7 +279,7 @@ BMI2_INTF_RETURN_TYPE bmi2_spi_write(uint8_t reg_addr, const uint8_t *reg_data, 
 void bmi2_delay_us(uint32_t period, void *intf_ptr)
 {
     //coines_delay_usec(period);
-    ets_delay_us(period);
+    stampfly_delay_us(period);
 }
 
 /*!

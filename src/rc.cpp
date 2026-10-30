@@ -28,6 +28,10 @@
 #include <esp_now.h>
 #include <esp_wifi.h>
 #include "flight_control.hpp"
+#include "arduino_esp32_compat.h"
+#if STAMPFLY_ARDUINO_ESP32_V3
+#include <esp_mac.h>
+#endif
 
 // esp_now_peer_info_t slave;
 
@@ -50,10 +54,14 @@ esp_now_peer_info_t peerInfo;
 volatile float Stick[16];
 volatile uint8_t Recv_MAC[3];
 
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 0)
+void on_esp_now_sent(const esp_now_send_info_t *tx_info, esp_now_send_status_t status);
+#else
 void on_esp_now_sent(const uint8_t *mac_addr, esp_now_send_status_t status);
+#endif
 
-// 受信コールバック
-void OnDataRecv(const uint8_t *mac_addr, const uint8_t *recv_data, int data_len) {
+// Common handler for received data
+static void handle_received_data(const uint8_t *src_mac, const uint8_t *recv_data, int data_len) {
     Connect_flag = 0;
 
     uint8_t *d_int;
@@ -61,7 +69,7 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *recv_data, int data_len)
     float d_float;
 
     if (!TelemAddr[0] && !TelemAddr[1] && !TelemAddr[2] && !TelemAddr[3] && !TelemAddr[4] && !TelemAddr[5]) {
-        memcpy(TelemAddr, mac_addr, 6);
+        memcpy(TelemAddr, src_mac, 6);
         memcpy(peerInfo.peer_addr, TelemAddr, 6);
         peerInfo.channel = CHANNEL;
         peerInfo.encrypt = false;
@@ -142,11 +150,30 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *recv_data, int data_len)
 #endif
 }
 
+// Receive callback wrapper (Arduino-ESP32 2.x / 3.x signatures)
+#if STAMPFLY_ARDUINO_ESP32_V3
+void OnDataRecv(const esp_now_recv_info_t *info, const uint8_t *recv_data, int data_len) {
+    handle_received_data(info->src_addr, recv_data, data_len);
+}
+#else
+void OnDataRecv(const uint8_t *mac_addr, const uint8_t *recv_data, int data_len) {
+    handle_received_data(mac_addr, recv_data, data_len);
+}
+#endif
+
 // 送信コールバック
 uint8_t esp_now_send_status;
-void on_esp_now_sent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 0)
+void on_esp_now_sent(const esp_now_send_info_t *tx_info, esp_now_send_status_t status) {
+    (void)tx_info;
     esp_now_send_status = status;
 }
+#else
+void on_esp_now_sent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+    (void)mac_addr;
+    esp_now_send_status = status;
+}
+#endif
 
 void rc_init(void) {
     // Initialize Stick list
@@ -156,7 +183,25 @@ void rc_init(void) {
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
 
+#if STAMPFLY_ARDUINO_ESP32_V3
+    esp_err_t mac_status = esp_read_mac((uint8_t *)MyMacAddr, ESP_MAC_WIFI_STA);
+    bool mac_valid       = (mac_status == ESP_OK);
+    bool mac_is_zero     = true;
+    for (uint8_t i = 0; i < sizeof(MyMacAddr); i++) {
+        if (MyMacAddr[i] != 0) {
+            mac_is_zero = false;
+            break;
+        }
+    }
+    mac_valid = mac_valid && !mac_is_zero;
+    if (!mac_valid) {
+        memset((uint8_t *)MyMacAddr, 0, sizeof(MyMacAddr));
+        USBSerial.printf("Invalid WiFi STA MAC (esp_read_mac status: %d); pairing broadcast disabled.\r\n",
+                         (int)mac_status);
+    }
+#else
     WiFi.macAddress((uint8_t *)MyMacAddr);
+#endif
     USBSerial.printf("MAC ADDRESS: %02X:%02X:%02X:%02X:%02X:%02X\r\n", MyMacAddr[0], MyMacAddr[1], MyMacAddr[2],
                      MyMacAddr[3], MyMacAddr[4], MyMacAddr[5]);
 
@@ -179,11 +224,23 @@ void rc_init(void) {
     esp_wifi_set_channel(CHANNEL, WIFI_SECOND_CHAN_NONE);
 
     // Send my MAC address
+#if STAMPFLY_ARDUINO_ESP32_V3
+    if (mac_valid) {
+        for (uint16_t i = 0; i < 50; i++) {
+            send_peer_info();
+            delay(50);
+            USBSerial.printf("%d\n", i);
+        }
+    } else {
+        USBSerial.println("Pairing broadcast skipped because WiFi STA MAC is invalid.");
+    }
+#else
     for (uint16_t i = 0; i < 50; i++) {
         send_peer_info();
         delay(50);
         USBSerial.printf("%d\n", i);
     }
+#endif
 
     // ESP-NOW再初期化
     WiFi.mode(WIFI_STA);

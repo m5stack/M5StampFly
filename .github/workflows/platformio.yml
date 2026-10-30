@@ -1,24 +1,37 @@
-name: Build test with platformio
+name: Build test with PlatformIO
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
+    name: Build (${{ matrix.environment }})
     runs-on: ubuntu-latest
- 
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        environment:
+          - esp32-s3-devkitc-1
+          - esp32-s3-devkitc-1-arduino3311
+
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/cache@v3
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cache/pip
             ~/.platformio/.cache
-          key: ${{ runner.os }}-pio
-      - uses: actions/setup-python@v4
+          key: ${{ runner.os }}-pio-${{ matrix.environment }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: |
+            ${{ runner.os }}-pio-${{ matrix.environment }}-
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - name: Install PlatformIO Core
-        run: pip install --upgrade platformio
+        run: pip install platformio==6.1.19
 
       - name: Build PlatformIO Project
-        run: pio run
+        run: pio run -e ${{ matrix.environment }}

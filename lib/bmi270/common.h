@@ -17,7 +17,10 @@ extern "C" {
 #include <math.h>
 #include "bmi2.h"
 #include "bmi2_defs.h"
+#include "../../include/arduino_esp32_i2c_compat.h"
+#if !STAMPFLY_ARDUINO_ESP32_V3
 #include "driver/i2c.h"
+#endif
 #include <driver/spi_master.h>
 #include "driver/gpio.h"
 #include "sdkconfig.h"

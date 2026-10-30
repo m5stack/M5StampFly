@@ -24,6 +24,8 @@
  */
 
 #include "sensor.hpp"
+#include "arduino_esp32_compat.h"
+#include "arduino_esp32_i2c_compat.h"
 #include "imu.hpp"
 #include "tof.hpp"
 #include "flight_control.hpp"
@@ -152,6 +154,11 @@ void sensor_init() {
         }
     }
     delay(10);
+
+#if STAMPFLY_ARDUINO_ESP32_V3
+    // Switch ToF I2C to a short timeout before entering the 400 Hz loop
+    stampfly_i2c_set_timeout_ms(STAMPFLY_I2C_RUNTIME_TIMEOUT_MS);
+#endif
 
     // Acceleration filter
     acc_filter.set_parameter(0.005, 0.0025);

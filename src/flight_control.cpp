@@ -45,6 +45,7 @@
 #include "telemetry.hpp"
 #include "button.hpp"
 #include "buzzer.h"
+#include "arduino_esp32_compat.h"
 
 // モータPWM出力Pinのアサイン
 // Motor PWM Pin
@@ -257,6 +258,9 @@ void init_copter(void) {
     USBSerial.begin(115200);
     delay(1500);
     USBSerial.printf("Start StampFly!\r\n");
+    USBSerial.printf("Environment: Arduino-ESP32 %s (%s)\r\n",
+                     STAMPFLY_ARDUINO_ESP32_VERSION_STRING,
+                     STAMPFLY_ARDUINO_ESP32_BRANCH_NAME);
 
     // Initialize PWM
     init_pwm();
@@ -271,10 +275,16 @@ void init_copter(void) {
 
     // 割り込み設定
     // Initialize intrupt
+#if STAMPFLY_ARDUINO_ESP32_V3
+    timer = timerBegin(1000000);
+    timerAttachInterrupt(timer, &onTimer);
+    timerAlarm(timer, 2500, true, 0);
+#else
     timer = timerBegin(0, 80, true);
     timerAttachInterrupt(timer, &onTimer, true);
     timerAlarmWrite(timer, 2500, true);
     timerAlarmEnable(timer);
+#endif
 
     // init button G0
     init_button();
@@ -1019,20 +1029,34 @@ void angle_control(void) {
     }
 }
 
+static void write_motor_duty(uint8_t channel, uint32_t duty) {
+#if STAMPFLY_ARDUINO_ESP32_V3
+    ledcWriteChannel(channel, duty);
+#else
+    ledcWrite(channel, duty);
+#endif
+}
+
 void set_duty_fr(float duty) {
-    ledcWrite(FrontRight_motor, (uint32_t)(255 * duty));
+    write_motor_duty(FrontRight_motor, (uint32_t)(255 * duty));
 }
 void set_duty_fl(float duty) {
-    ledcWrite(FrontLeft_motor, (uint32_t)(255 * duty));
+    write_motor_duty(FrontLeft_motor, (uint32_t)(255 * duty));
 }
 void set_duty_rr(float duty) {
-    ledcWrite(RearRight_motor, (uint32_t)(255 * duty));
+    write_motor_duty(RearRight_motor, (uint32_t)(255 * duty));
 }
 void set_duty_rl(float duty) {
-    ledcWrite(RearLeft_motor, (uint32_t)(255 * duty));
+    write_motor_duty(RearLeft_motor, (uint32_t)(255 * duty));
 }
 
 void init_pwm(void) {
+#if STAMPFLY_ARDUINO_ESP32_V3
+    ledcAttachChannel(pwmFrontLeft, freq, resolution, FrontLeft_motor);
+    ledcAttachChannel(pwmFrontRight, freq, resolution, FrontRight_motor);
+    ledcAttachChannel(pwmRearLeft, freq, resolution, RearLeft_motor);
+    ledcAttachChannel(pwmRearRight, freq, resolution, RearRight_motor);
+#else
     ledcSetup(FrontLeft_motor, freq, resolution);
     ledcSetup(FrontRight_motor, freq, resolution);
     ledcSetup(RearLeft_motor, freq, resolution);
@@ -1041,6 +1065,7 @@ void init_pwm(void) {
     ledcAttachPin(pwmFrontRight, FrontRight_motor);
     ledcAttachPin(pwmRearLeft, RearLeft_motor);
     ledcAttachPin(pwmRearRight, RearRight_motor);
+#endif
 }
 
 uint8_t get_arming_button(void) {

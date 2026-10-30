@@ -24,6 +24,7 @@
  */
 
 #include <Arduino.h>
+#include "arduino_esp32_compat.h"
 #include "common.h"
 #include "bmi2.h"
 #include "imu.hpp"

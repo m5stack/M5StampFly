@@ -24,6 +24,7 @@
  */
 
 #include <Arduino.h>
+#include "arduino_esp32_compat.h"
 #include "tof.hpp"
 
 VL53LX_Dev_t tof_front;
